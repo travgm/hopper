@@ -31,6 +31,7 @@
 int verify_target_binary (Elf64_Ehdr * ehdr);
 int check_file_access (const char *file_path);
 void print_usage (const char *program_name);
+void print_flags(Elf64_Word p_flags);
 
 int
 patchInterp (const char *file_name, const char *new_interp)
@@ -64,6 +65,10 @@ patchInterp (const char *file_name, const char *new_interp)
     {
       if (phdr[i].p_type == PT_INTERP)
 	{
+	  printf("Found PT_INTERP segment at 0x%016lx\n", phdr[i].p_vaddr);
+	  printf("Offset: 0x%lx\n", phdr[i].p_offset);
+	  printf("Size: %zu\n", phdr[i].p_filesz);
+	  print_flags(phdr[i].p_flags);
 	  interp_offset = phdr[i].p_offset;
 	  interp_size = (Elf64_Xword) phdr[i].p_filesz;
 	  interp_idx = i;
@@ -87,7 +92,7 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  printf ("FOUND 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
+  printf ("OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
 
   Elf64_Xword new_interp_len = strlen (new_interp) + 1;
 
@@ -101,7 +106,7 @@ patchInterp (const char *file_name, const char *new_interp)
   size_t b_written = fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
   if (b_written > 0)
     {
-      printf ("SET 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
+      printf ("NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
     }
 
   free (interp);
@@ -109,6 +114,19 @@ patchInterp (const char *file_name, const char *new_interp)
 
   return 0;
 
+}
+
+void 
+print_flags(Elf64_Word p_flags) {
+    printf("Flags (p_flags): 0x%x ( ", p_flags);
+    if (p_flags & PF_R) printf("R");
+    if (p_flags & PF_W) printf("W");
+    if (p_flags & PF_X) printf("E");
+    printf(" )\n");
+
+    printf("  Read:    %s\n", (p_flags & PF_R) ? "Yes" : "No");
+    printf("  Write:   %s\n", (p_flags & PF_W) ? "Yes" : "No");
+    printf("  Execute: %s\n", (p_flags & PF_X) ? "Yes" : "No");
 }
 
 int
@@ -125,6 +143,7 @@ verify_target_binary (Elf64_Ehdr * ehdr)
       return -1;
     }
 
+  printf("ELF file is a 64-Bit Shared Object (DYN) file\n\n");
   return 0;
 
 }
@@ -165,7 +184,6 @@ main (int argc, char *argv[])
       return 1;
     }
 
-  printf ("patching interpreter in %s with %s\n\n", target_elf, new_interp);
   if (patchInterp (target_elf, new_interp) != 0)
     {
       fprintf (stderr, "error patching '%s'\n", target_elf);

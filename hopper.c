@@ -28,23 +28,20 @@
 #include <errno.h>
 #include <elf.h>
 
-int
-verify_target_binary(Elf64_Ehdr *ehdr);
+int verify_target_binary (Elf64_Ehdr * ehdr);
 
-int
-check_file_access (const char *file_path);
+int check_file_access (const char *file_path);
 
-void
-print_usage (const char *program_name);
+void print_usage (const char *program_name);
 
 int
 patchInterp (const char *file_name, const char *new_interp)
 {
-  Elf64_Ehdr  ehdr;
-  Elf64_Phdr  *phdr = NULL;
-  Elf64_Off   interp_offset = 0;
+  Elf64_Ehdr ehdr;
+  Elf64_Phdr *phdr = NULL;
+  Elf64_Off interp_offset = 0;
   Elf64_Xword interp_size = 0;
-  int         interp_idx = 0;
+  int interp_idx = 0;
 
   FILE *obj = NULL;
   if ((obj = fopen (file_name, "r+b")) == NULL)
@@ -53,10 +50,12 @@ patchInterp (const char *file_name, const char *new_interp)
     }
 
   fread (&ehdr, sizeof (ehdr), 1, obj);
-  if (verify_target_binary(&ehdr) != 0) {
-	fprintf(stderr, "errror: not a valid dynamically linked ELF64 binary\n");
-	return -1;
-  }
+  if (verify_target_binary (&ehdr) != 0)
+    {
+      fprintf (stderr,
+	       "errror: not a valid dynamically linked ELF64 binary\n");
+      return -1;
+    }
 
   phdr = malloc (ehdr.e_phnum * sizeof (Elf64_Phdr));
 
@@ -116,15 +115,18 @@ patchInterp (const char *file_name, const char *new_interp)
 }
 
 int
-verify_target_binary(Elf64_Ehdr *ehdr) {
-  if (strncmp (ehdr->e_ident, ELFMAG, 4) != 0 && 
-	ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
-	  return -1;
-  }
+verify_target_binary (Elf64_Ehdr * ehdr)
+{
+  if (strncmp (ehdr->e_ident, ELFMAG, 4) != 0 &&
+      ehdr->e_ident[EI_CLASS] != ELFCLASS64)
+    {
+      return -1;
+    }
 
-  if (ehdr->e_type != ET_DYN) {
-	  return -1;
-  }
+  if (ehdr->e_type != ET_DYN)
+    {
+      return -1;
+    }
 
   return 0;
 

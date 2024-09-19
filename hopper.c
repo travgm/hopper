@@ -5,7 +5,6 @@
  *
  *  usage: hopper <file> <interp>
  *
- *
  *  (C) Copyright 2024 Travis Montoya "travgm" trav@hexproof.sh
  *
  *  This program is free software: you can redistribute it and/or modify

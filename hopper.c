@@ -29,9 +29,7 @@
 #include <elf.h>
 
 int verify_target_binary (Elf64_Ehdr * ehdr);
-
 int check_file_access (const char *file_path);
-
 void print_usage (const char *program_name);
 
 int
@@ -91,7 +89,6 @@ patchInterp (const char *file_name, const char *new_interp)
 
   printf ("FOUND 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
 
-  /* Patch the interpreter with the new one */
   Elf64_Xword new_interp_len = strlen (new_interp) + 1;
 
   fseek (obj, interp_offset, SEEK_SET);

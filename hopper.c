@@ -28,15 +28,23 @@
 #include <errno.h>
 #include <elf.h>
 
+int
+verify_target_binary(Elf64_Ehdr *ehdr);
+
+int
+check_file_access (const char *file_path);
+
+void
+print_usage (const char *program_name);
 
 int
 patchInterp (const char *file_name, const char *new_interp)
 {
-  Elf64_Ehdr ehdr;
-  Elf64_Phdr *phdr = NULL;
-  Elf64_Off interp_offset = 0;
-  size_t interp_size = 0;
-  int interp_idx = 0;
+  Elf64_Ehdr  ehdr;
+  Elf64_Phdr  *phdr = NULL;
+  Elf64_Off   interp_offset = 0;
+  Elf64_Xword interp_size = 0;
+  int         interp_idx = 0;
 
   FILE *obj = NULL;
   if ((obj = fopen (file_name, "r+b")) == NULL)
@@ -45,6 +53,10 @@ patchInterp (const char *file_name, const char *new_interp)
     }
 
   fread (&ehdr, sizeof (ehdr), 1, obj);
+  if (verify_target_binary(&ehdr) != 0) {
+	fprintf(stderr, "errror: not a valid dynamically linked ELF64 binary\n");
+	return -1;
+  }
 
   phdr = malloc (ehdr.e_phnum * sizeof (Elf64_Phdr));
 
@@ -56,7 +68,7 @@ patchInterp (const char *file_name, const char *new_interp)
       if (phdr[i].p_type == PT_INTERP)
 	{
 	  interp_offset = phdr[i].p_offset;
-	  interp_size = (size_t) phdr[i].p_filesz;
+	  interp_size = (Elf64_Xword) phdr[i].p_filesz;
 	  interp_idx = i;
 	  break;
 	}
@@ -78,10 +90,10 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  printf ("PT_INTERP = %s\n\n", interp);
+  printf ("FOUND 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
 
   /* Patch the interpreter with the new one */
-  size_t new_interp_len = strlen (new_interp) + 1;
+  Elf64_Xword new_interp_len = strlen (new_interp) + 1;
 
   fseek (obj, interp_offset, SEEK_SET);
   fwrite (new_interp, 1, new_interp_len, obj);
@@ -93,11 +105,26 @@ patchInterp (const char *file_name, const char *new_interp)
   size_t b_written = fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
   if (b_written > 0)
     {
-      printf ("successfully patched interpreter!\n");
+      printf ("SET 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
     }
 
   free (interp);
   free (phdr);
+
+  return 0;
+
+}
+
+int
+verify_target_binary(Elf64_Ehdr *ehdr) {
+  if (strncmp (ehdr->e_ident, ELFMAG, 4) != 0 && 
+	ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
+	  return -1;
+  }
+
+  if (ehdr->e_type != ET_DYN) {
+	  return -1;
+  }
 
   return 0;
 

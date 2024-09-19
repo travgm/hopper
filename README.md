@@ -10,9 +10,8 @@ $ readelf -l camel | egrep 'interpreter'
 $ ./hopper camel ld-camel.so
 patching interpreter in camel with ld-camel.so
 
-PT_INTERP = /lib64/ld-linux-x86-64.so.2
-
-successfully patched interpreter!
+FOUND 0x318:PT_INTERP = /lib64/ld-linux-x86-64.so.2
+SET 0x318:PT_INTERP = ld-camel.so
 
 $ readelf -l camel | egrep 'interpreter'
       [Requesting program interpreter: ld-camel.so]

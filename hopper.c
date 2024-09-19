@@ -31,7 +31,7 @@
 int verify_target_binary (Elf64_Ehdr * ehdr);
 int check_file_access (const char *file_path);
 void print_usage (const char *program_name);
-void print_flags(Elf64_Word p_flags);
+void print_flags (Elf64_Word p_flags);
 
 int
 patchInterp (const char *file_name, const char *new_interp)
@@ -65,10 +65,10 @@ patchInterp (const char *file_name, const char *new_interp)
     {
       if (phdr[i].p_type == PT_INTERP)
 	{
-	  printf("Found PT_INTERP segment at 0x%016lx\n", phdr[i].p_vaddr);
-	  printf("Offset: 0x%lx\n", phdr[i].p_offset);
-	  printf("Size: %zu\n", phdr[i].p_filesz);
-	  print_flags(phdr[i].p_flags);
+	  printf ("Found PT_INTERP segment at 0x%016lx\n", phdr[i].p_vaddr);
+	  printf ("Offset: 0x%lx\n", phdr[i].p_offset);
+	  printf ("Size: %zu\n", phdr[i].p_filesz);
+	  print_flags (phdr[i].p_flags);
 	  interp_offset = phdr[i].p_offset;
 	  interp_size = (Elf64_Xword) phdr[i].p_filesz;
 	  interp_idx = i;
@@ -116,17 +116,21 @@ patchInterp (const char *file_name, const char *new_interp)
 
 }
 
-void 
-print_flags(Elf64_Word p_flags) {
-    printf("Flags (p_flags): 0x%x ( ", p_flags);
-    if (p_flags & PF_R) printf("R");
-    if (p_flags & PF_W) printf("W");
-    if (p_flags & PF_X) printf("E");
-    printf(" )\n");
+void
+print_flags (Elf64_Word p_flags)
+{
+  printf ("Flags (p_flags): 0x%x ( ", p_flags);
+  if (p_flags & PF_R)
+    printf ("R");
+  if (p_flags & PF_W)
+    printf ("W");
+  if (p_flags & PF_X)
+    printf ("E");
+  printf (" )\n");
 
-    printf("  Read:    %s\n", (p_flags & PF_R) ? "Yes" : "No");
-    printf("  Write:   %s\n", (p_flags & PF_W) ? "Yes" : "No");
-    printf("  Execute: %s\n", (p_flags & PF_X) ? "Yes" : "No");
+  printf ("  Read:    %s\n", (p_flags & PF_R) ? "Yes" : "No");
+  printf ("  Write:   %s\n", (p_flags & PF_W) ? "Yes" : "No");
+  printf ("  Execute: %s\n", (p_flags & PF_X) ? "Yes" : "No");
 }
 
 int
@@ -143,7 +147,7 @@ verify_target_binary (Elf64_Ehdr * ehdr)
       return -1;
     }
 
-  printf("ELF file is a 64-Bit Shared Object (DYN) file\n\n");
+  printf ("ELF file is a 64-Bit Shared Object (DYN) file\n\n");
   return 0;
 
 }

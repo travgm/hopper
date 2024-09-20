@@ -76,11 +76,12 @@ patchInterp (const char *file_name, const char *new_interp)
 	}
     }
 
-  if (interp_offset == 0) {
-     fprintf(stderr, "error: no PT_INTERP segment found\n");
-     free(phdr);
-     return -1;
-  }
+  if (interp_offset == 0)
+    {
+      fprintf (stderr, "error: no PT_INTERP segment found\n");
+      free (phdr);
+      return -1;
+    }
 
   fseek (obj, interp_offset, SEEK_SET);
   char *interp = malloc (interp_size);

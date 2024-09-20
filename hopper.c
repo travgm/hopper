@@ -143,7 +143,7 @@ print_flags (Elf64_Word p_flags)
 int
 verify_target_binary (Elf64_Ehdr * ehdr)
 {
-  if (strncmp (ehdr->e_ident, ELFMAG, 4) != 0 &&
+  if (strncmp (ehdr->e_ident, ELFMAG, 4) != 0 ||
       ehdr->e_ident[EI_CLASS] != ELFCLASS64)
     {
       return -1;

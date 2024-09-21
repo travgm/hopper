@@ -86,8 +86,6 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-
-  /* read symbold table */
   shdr = malloc (ehdr.e_shnum * sizeof (Elf64_Shdr));
   fseek (obj, ehdr.e_shoff, SEEK_SET);
   fread (shdr, sizeof (Elf64_Shdr), ehdr.e_shnum, obj);

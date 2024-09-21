@@ -32,12 +32,15 @@ int verify_target_binary (Elf64_Ehdr * ehdr);
 int check_file_access (const char *file_path);
 void print_usage (const char *program_name);
 void print_flags (Elf64_Word p_flags);
+void print_symbols (FILE * obj, Elf64_Shdr * shdr, long table_offset);
 
 int
 patchInterp (const char *file_name, const char *new_interp)
 {
   Elf64_Ehdr ehdr;
   Elf64_Phdr *phdr = NULL;
+  Elf64_Shdr *shdr = NULL;
+  Elf64_Off table_offset = 0;
   Elf64_Off interp_offset = 0;
   Elf64_Xword interp_size = 0;
   int interp_idx = 0;
@@ -83,6 +86,32 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
+
+  /* read symbold table */
+  shdr = malloc (ehdr.e_shnum * sizeof (Elf64_Shdr));
+  fseek (obj, ehdr.e_shoff, SEEK_SET);
+  fread (shdr, sizeof (Elf64_Shdr), ehdr.e_shnum, obj);
+
+  table_offset = shdr[ehdr.e_shstrndx].sh_offset;
+
+  char *shstrtab = malloc (shdr[ehdr.e_shstrndx].sh_size);
+  fseek (obj, shdr[ehdr.e_shstrndx].sh_offset, SEEK_SET);
+  fread (shstrtab, shdr[ehdr.e_shstrndx].sh_size, 1, obj);
+
+  for (int i = 0; i < ehdr.e_shnum; i++)
+    {
+      if (shdr[i].sh_type == SHT_SYMTAB || shdr[i].sh_type == SHT_DYNSYM)
+	{
+
+	  const char *symtab_name = shstrtab + shdr[i].sh_name;
+	  printf ("Symbol Table '%s' (STT_FUNC):\n", symtab_name);
+	  print_symbols (obj, &shdr[i], shdr[shdr[i].sh_link].sh_offset);
+	}
+    }
+
+  free (shdr);
+  free (shstrtab);
+
   fseek (obj, interp_offset, SEEK_SET);
   char *interp = malloc (interp_size);
   if (interp == NULL)
@@ -99,7 +128,8 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  printf ("OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
+  printf ("Patching Binary:\n");
+  printf ("  OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
 
   Elf64_Xword new_interp_len = strlen (new_interp) + 1;
 
@@ -113,14 +143,42 @@ patchInterp (const char *file_name, const char *new_interp)
   size_t b_written = fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
   if (b_written > 0)
     {
-      printf ("NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
+      printf ("  NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
     }
 
   free (interp);
   free (phdr);
+  fclose (obj);
 
   return 0;
 
+}
+
+void
+print_symbols (FILE * obj, Elf64_Shdr * shdr, long table_offset)
+{
+  Elf64_Sym *sym = NULL;
+  char symbol_name[256];
+  int symbol_cnt = shdr->sh_size / sizeof (Elf64_Sym);
+  int func_cnt = 0;
+
+  sym = malloc (shdr->sh_size);
+
+  fseek (obj, shdr->sh_offset, SEEK_SET);
+  fread (sym, shdr->sh_size, 1, obj);
+  for (int i = 0; i < symbol_cnt; i++)
+    {
+      if (ELF64_ST_TYPE (sym[i].st_info) == STT_FUNC)
+	{
+	  fseek (obj, table_offset + sym[i].st_name, SEEK_SET);
+	  fgets (symbol_name, sizeof (symbol_name), obj);
+
+	  printf ("  %d: %016lx %s\n", func_cnt++, sym[i].st_value,
+		  symbol_name);
+	}
+    }
+
+  free (sym);
 }
 
 void
@@ -174,6 +232,8 @@ check_file_access (const char *file_path)
 void
 print_usage (const char *program_name)
 {
+  fprintf (stderr,
+	   "Hopper - ELF64 Interpreter patcher by Travis Montoya <trav@hexproof.sh>\n");
   fprintf (stderr, "usage: %s <file> <interpreter>\n", program_name);
 }
 

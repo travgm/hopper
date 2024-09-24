@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
 #include <elf.h>
@@ -60,6 +63,12 @@ patchInterp (const char *file_name, const char *new_interp)
     }
 
   phdr = malloc (ehdr.e_phnum * sizeof (Elf64_Phdr));
+  if (phdr == NULL)
+    {
+      fprintf (stderr, "error: unable to allocate memory for phdr\n");
+      fclose (obj);
+      return -1;
+    }
 
   fseek (obj, ehdr.e_phoff, SEEK_SET);
   fread (phdr, sizeof (Elf64_Phdr), ehdr.e_phnum, obj);
@@ -87,12 +96,29 @@ patchInterp (const char *file_name, const char *new_interp)
     }
 
   shdr = malloc (ehdr.e_shnum * sizeof (Elf64_Shdr));
+  if (shdr == NULL)
+    {
+      fprintf (stderr, "error: unable to allocate memory for shdr\n");
+      free (phdr);
+      fclose (obj);
+      return -1;
+    }
+
   fseek (obj, ehdr.e_shoff, SEEK_SET);
   fread (shdr, sizeof (Elf64_Shdr), ehdr.e_shnum, obj);
 
   table_offset = shdr[ehdr.e_shstrndx].sh_offset;
 
   char *shstrtab = malloc (shdr[ehdr.e_shstrndx].sh_size);
+  if (shstrtab == NULL)
+    {
+      fprintf (stderr, "error: unable to allocate memory for string table\n");
+      free (phdr);
+      free (shdr);
+      fclose (obj);
+      return -1;
+    }
+
   fseek (obj, shdr[ehdr.e_shstrndx].sh_offset, SEEK_SET);
   fread (shstrtab, shdr[ehdr.e_shstrndx].sh_size, 1, obj);
 
@@ -115,6 +141,8 @@ patchInterp (const char *file_name, const char *new_interp)
   if (interp == NULL)
     {
       free (phdr);
+      free (shdr);
+      fclose (obj);
       return -1;
     }
 
@@ -228,17 +256,74 @@ check_file_access (const char *file_path)
 }
 
 void
+print_interps ()
+{
+  const char *dirs[] = { "/lib", "/lib64", "/usr/lib", "/usr/lib64" };
+  DIR *dir;
+  struct dirent *entry;
+  char full_path[1024];
+  struct stat file_stat;
+  int count = 0;
+
+  printf ("Searching for interpreters on local system...\n\n");
+  for (int i = 0; i < sizeof (dirs) / sizeof (dirs[0]); i++)
+    {
+      dir = opendir (dirs[i]);
+      if (!dir)
+	{
+	  continue;
+	}
+
+      while ((entry = readdir (dir)) != NULL)
+	{
+	  if (strcmp (entry->d_name, ".") == 0
+	      || strcmp (entry->d_name, "..") == 0)
+	    {
+	      continue;
+	    }
+
+	  snprintf (full_path, sizeof (full_path), "%s/%s", dirs[i],
+		    entry->d_name);
+
+	  if (stat (full_path, &file_stat) == 0
+	      && S_ISREG (file_stat.st_mode))
+	    {
+	      if (strstr (entry->d_name, "ld-linux") != NULL)
+		{
+		  printf ("%s\n", full_path);
+		  count++;
+		}
+	    }
+	}
+      closedir (dir);
+    }
+  printf ("\nFound (%d) interpreters\n", count);
+}
+
+void
 print_usage (const char *program_name)
 {
   fprintf (stderr,
-	   "Hopper - ELF64 Interpreter patcher by Travis Montoya <trav@hexproof.sh>\n");
-  fprintf (stderr, "usage: %s <file> <interpreter>\n", program_name);
+	   "Hopper the ELF64 PT_INTERP tool by Travis Montoya <trav@hexproof.sh>\n");
+  fprintf (stderr, "usage: %s [target] [interpreter]\n", program_name);
+  fprintf (stderr,
+	   "\nYou can run '%s -search' to list common interpreters on your system\n",
+	   program_name);
 }
 
 int
 main (int argc, char *argv[])
 {
 
+  if (argc == 2 && strncmp (argv[1], "-search", 7) == 0)
+    {
+      print_interps ();
+      return 0;
+    }
+
+  /*
+   * If we are not listing interpreters we must specify a target and interpreter
+   */
   if (argc != 3)
     {
       print_usage (argv[0]);

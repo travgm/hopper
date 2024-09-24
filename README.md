@@ -44,6 +44,22 @@ $ readelf -l camel | egrep 'interpreter'
       [Requesting program interpreter: ld-camel.so]
 ```
 
+You can search the local system for available interpreters (NOTE: This does not mean it will always work)
+
+```
+$ ./hopper -search
+Searching for interpreters on local system...
+
+/lib/ld-linux.so.2
+/lib64/ld-linux-x86-64.so.2
+/usr/lib/ld-linux.so.2
+/usr/lib64/ld-linux-x86-64.so.2
+
+Found (4) interpreters
+
+$
+```
+
 copyright
 =========
 Copyright 2024 Travis Montoya "travgm"

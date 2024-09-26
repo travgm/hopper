@@ -1,6 +1,8 @@
 Hopper
 ======
 
+UPDATE: This is an older version which now is updated at: https://github.com/Hexproofsh/hopper
+
 Just a quick hop in the target elf and it modifies the interperter. This tool will allow you to patch the interperter in an ELF64
 target binary with your own. Hopper will display the STT_FUNC types from the```.dynsm``` and ```.symtab``` tables. This gives more
 information on what functions would need to be resolved in your interperter and amongst other things.

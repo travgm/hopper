@@ -1,9 +1,9 @@
 /* hopper.c - patch the interpreter in elf64 binaries
  *
- *  compile:
+ *  use make or compile:
  *  gcc -o hopper hopper.c
  *
- *  usage: ./hopper [target] [interpreter]
+ *  usage: ./hopper [options(s)] [target]
  *
  *  (C) Copyright 2024 Travis Montoya "travgm" trav@hexproof.sh
  *
@@ -37,6 +37,17 @@ bool verbose = false;
 bool show_symbols = false;
 bool disp_interp = false;
 
+typedef struct
+{
+  Elf64_Off offset;
+  Elf64_Xword size;
+  int index;
+  char *old_name;
+  char *new_name;
+} Elf64_InterpInfo;
+
+void patch_interpreter (Elf64_Ehdr ehdr, Elf64_Phdr * phdr,
+			Elf64_InterpInfo interpinfo, FILE * obj);
 int verify_target_binary (Elf64_Ehdr * ehdr);
 int check_file_access (const char *file_path);
 void print_usage (const char *program_name);
@@ -45,15 +56,27 @@ void print_symbols (FILE * obj, Elf64_Shdr * shdr, long table_offset);
 void print_interps ();
 
 int
-patchInterp (const char *file_name, const char *new_interp)
+process_file (const char *file_name, const char *new_interp)
 {
   Elf64_Ehdr ehdr;
   Elf64_Phdr *phdr = NULL;
   Elf64_Shdr *shdr = NULL;
   Elf64_Off table_offset = 0;
-  Elf64_Off interp_offset = 0;
-  Elf64_Xword interp_size = 0;
-  int interp_idx = 0;
+  Elf64_InterpInfo interpinfo;
+
+  interpinfo.offset = 0;
+  interpinfo.size = 0;
+  interpinfo.index = 0;
+  interpinfo.old_name = NULL;
+
+  if (new_interp)
+    {
+      interpinfo.new_name = strdup (new_interp);
+    }
+  else
+    {
+      interpinfo.new_name = NULL;
+    }
 
   FILE *obj = NULL;
   if ((obj = fopen (file_name, "r+b")) == NULL)
@@ -80,6 +103,7 @@ patchInterp (const char *file_name, const char *new_interp)
   fseek (obj, ehdr.e_phoff, SEEK_SET);
   fread (phdr, sizeof (Elf64_Phdr), ehdr.e_phnum, obj);
 
+  /* Find our PT_INTERP segment, this must exist to continue */
   for (int i = 0; i < ehdr.e_phnum; i++)
     {
       if (phdr[i].p_type == PT_INTERP)
@@ -92,14 +116,14 @@ patchInterp (const char *file_name, const char *new_interp)
 	      printf ("Size: %zu\n", phdr[i].p_filesz);
 	      print_flags (phdr[i].p_flags);
 	    }
-	  interp_offset = phdr[i].p_offset;
-	  interp_size = (Elf64_Xword) phdr[i].p_filesz;
-	  interp_idx = i;
+	  interpinfo.offset = phdr[i].p_offset;
+	  interpinfo.size = (Elf64_Xword) phdr[i].p_filesz;
+	  interpinfo.index = i;
 	  break;
 	}
     }
 
-  if (interp_offset == 0)
+  if (interpinfo.offset == 0)
     {
       fprintf (stderr, "error: no PT_INTERP segment found\n");
       free (phdr);
@@ -115,26 +139,27 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  fseek (obj, ehdr.e_shoff, SEEK_SET);
-  fread (shdr, sizeof (Elf64_Shdr), ehdr.e_shnum, obj);
-
-  table_offset = shdr[ehdr.e_shstrndx].sh_offset;
-
-  char *shstrtab = malloc (shdr[ehdr.e_shstrndx].sh_size);
-  if (shstrtab == NULL)
-    {
-      fprintf (stderr, "error: unable to allocate memory for string table\n");
-      free (phdr);
-      free (shdr);
-      fclose (obj);
-      return -1;
-    }
-
-  fseek (obj, shdr[ehdr.e_shstrndx].sh_offset, SEEK_SET);
-  fread (shstrtab, shdr[ehdr.e_shstrndx].sh_size, 1, obj);
-
   if (show_symbols)
     {
+      fseek (obj, ehdr.e_shoff, SEEK_SET);
+      fread (shdr, sizeof (Elf64_Shdr), ehdr.e_shnum, obj);
+
+      table_offset = shdr[ehdr.e_shstrndx].sh_offset;
+
+      char *shstrtab = malloc (shdr[ehdr.e_shstrndx].sh_size);
+      if (shstrtab == NULL)
+	{
+	  fprintf (stderr,
+		   "error: unable to allocate memory for string table\n");
+	  free (phdr);
+	  free (shdr);
+	  fclose (obj);
+	  return -1;
+	}
+
+      fseek (obj, shdr[ehdr.e_shstrndx].sh_offset, SEEK_SET);
+      fread (shstrtab, shdr[ehdr.e_shstrndx].sh_size, 1, obj);
+
       for (int i = 0; i < ehdr.e_shnum; i++)
 	{
 	  if (shdr[i].sh_type == SHT_SYMTAB || shdr[i].sh_type == SHT_DYNSYM)
@@ -145,13 +170,13 @@ patchInterp (const char *file_name, const char *new_interp)
 	      print_symbols (obj, &shdr[i], shdr[shdr[i].sh_link].sh_offset);
 	    }
 	}
+
+      free (shdr);
+      free (shstrtab);
     }
 
-  free (shdr);
-  free (shstrtab);
-
-  fseek (obj, interp_offset, SEEK_SET);
-  char *interp = malloc (interp_size);
+  fseek (obj, interpinfo.offset, SEEK_SET);
+  char *interp = malloc (interpinfo.size);
   if (interp == NULL)
     {
       free (phdr);
@@ -160,39 +185,25 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  size_t b_read = fread (interp, 1, interp_size, obj);
-  if (b_read != interp_size)
+  size_t b_read = fread (interp, 1, interpinfo.size, obj);
+  if (b_read != interpinfo.size)
     {
       free (interp);
       free (phdr);
       return -1;
     }
 
+  interpinfo.old_name = interp;
+
   if (disp_interp)
     {
-      printf ("0x%lx:PT_INTERP = %s\n", interp_offset, interp);
+      printf ("0x%lx:PT_INTERP = %s\n", interpinfo.offset,
+	      interpinfo.old_name);
     }
 
-  if (new_interp)
+  if (interpinfo.new_name)
     {
-      printf ("Patching Binary:\n");
-      printf ("  OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
-
-      Elf64_Xword new_interp_len = strlen (new_interp) + 1;
-
-      fseek (obj, interp_offset, SEEK_SET);
-      fwrite (new_interp, 1, new_interp_len, obj);
-
-      phdr[interp_idx].p_filesz = new_interp_len;
-      phdr[interp_idx].p_memsz = new_interp_len;
-
-      fseek (obj, ehdr.e_phoff + interp_idx * sizeof (Elf64_Phdr), SEEK_SET);
-      size_t b_written =
-	fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
-      if (b_written > 0)
-	{
-	  printf ("  NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
-	}
+      patch_interpreter (ehdr, phdr, interpinfo, obj);
     }
 
   free (interp);
@@ -201,6 +212,33 @@ patchInterp (const char *file_name, const char *new_interp)
 
   return 0;
 
+}
+
+void
+patch_interpreter (Elf64_Ehdr ehdr, Elf64_Phdr * phdr,
+		   Elf64_InterpInfo interpinfo, FILE * obj)
+{
+  printf ("Patching Binary:\n");
+  printf ("  OLD 0x%lx:PT_INTERP = %s\n", interpinfo.offset,
+	  interpinfo.old_name);
+
+  Elf64_Xword new_interp_len = strlen (interpinfo.new_name) + 1;
+
+  fseek (obj, interpinfo.offset, SEEK_SET);
+  fwrite (interpinfo.new_name, 1, new_interp_len, obj);
+
+  phdr[interpinfo.index].p_filesz = new_interp_len;
+  phdr[interpinfo.index].p_memsz = new_interp_len;
+
+  fseek (obj, ehdr.e_phoff + interpinfo.index * sizeof (Elf64_Phdr),
+	 SEEK_SET);
+  size_t b_written =
+    fwrite (&phdr[interpinfo.index], sizeof (Elf64_Phdr), 1, obj);
+  if (b_written > 0)
+    {
+      printf ("  NEW 0x%lx:PT_INTERP = %s\n", interpinfo.offset,
+	      interpinfo.new_name);
+    }
 }
 
 void
@@ -415,10 +453,7 @@ main (int argc, char *argv[])
       return 1;
     }
 
-  /* patchInterp handles displaying symbols, displaying interpreter and
-   * patching the file
-   */
-  if (patchInterp (target_elf, interp) != 0)
+  if (process_file (target_elf, interp) != 0)
     {
       fprintf (stderr, "error patching '%s'\n", target_elf);
       return 1;

@@ -1,16 +1,30 @@
-hopper
+Hopper
 ======
 
 Just a quick hop in the target elf and it modifies the interperter. This tool will allow you to patch the interperter in an ELF64
 target binary with your own. Hopper will display the STT_FUNC types from the```.dynsm``` and ```.symtab``` tables. This gives more
 information on what functions would need to be resolved in your interperter and amongst other things.
  
+Usage
+=====
+```
+$ ./hopper
+Hopper the ELF64 PT_INTERP tool by Travis Montoya <trav@hexproof.sh>
+usage: ./hopper [option(s)] [target]
+  -v                 show verbose output
+  -s                 display symbol information (STT_FUNC)
+  -d                 display interpreter
+  -p [interpreter]   patch interpreter
+
+You can run './hopper -search' to list common interpreters on your system
+```
+If we want to patch our binary 'camel' with a new interpreter and see extended information we can do the following
 
 ```
 $ readelf -l camel | egrep 'interpreter'
       [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]
 
-$ ./hopper camel ld-camel.so
+$ ./hopper -v -s -p ld-camel.so camel
 ELF file is a 64-Bit Shared Object (DYN) file
 
 Found PT_INTERP segment at 0x0000000000000318
@@ -60,6 +74,6 @@ Found (4) interpreters
 $
 ```
 
-copyright
+Author
 =========
 Copyright 2024 Travis Montoya "travgm"

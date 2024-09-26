@@ -3,7 +3,7 @@
  *  compile:
  *  gcc -o hopper hopper.c
  *
- *  usage: hopper <file> <interp>
+ *  usage: ./hopper [target] [interpreter]
  *
  *  (C) Copyright 2024 Travis Montoya "travgm" trav@hexproof.sh
  *
@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -31,11 +32,17 @@
 #include <errno.h>
 #include <elf.h>
 
+/* Options for patching/displaying information */
+bool verbose = false;
+bool show_symbols = false;
+bool disp_interp = false;
+
 int verify_target_binary (Elf64_Ehdr * ehdr);
 int check_file_access (const char *file_path);
 void print_usage (const char *program_name);
 void print_flags (Elf64_Word p_flags);
 void print_symbols (FILE * obj, Elf64_Shdr * shdr, long table_offset);
+void print_interps ();
 
 int
 patchInterp (const char *file_name, const char *new_interp)
@@ -77,10 +84,14 @@ patchInterp (const char *file_name, const char *new_interp)
     {
       if (phdr[i].p_type == PT_INTERP)
 	{
-	  printf ("Found PT_INTERP segment at 0x%016lx\n", phdr[i].p_vaddr);
-	  printf ("Offset: 0x%lx\n", phdr[i].p_offset);
-	  printf ("Size: %zu\n", phdr[i].p_filesz);
-	  print_flags (phdr[i].p_flags);
+	  if (verbose)
+	    {
+	      printf ("Found PT_INTERP segment at 0x%016lx\n",
+		      phdr[i].p_vaddr);
+	      printf ("Offset: 0x%lx\n", phdr[i].p_offset);
+	      printf ("Size: %zu\n", phdr[i].p_filesz);
+	      print_flags (phdr[i].p_flags);
+	    }
 	  interp_offset = phdr[i].p_offset;
 	  interp_size = (Elf64_Xword) phdr[i].p_filesz;
 	  interp_idx = i;
@@ -122,14 +133,17 @@ patchInterp (const char *file_name, const char *new_interp)
   fseek (obj, shdr[ehdr.e_shstrndx].sh_offset, SEEK_SET);
   fread (shstrtab, shdr[ehdr.e_shstrndx].sh_size, 1, obj);
 
-  for (int i = 0; i < ehdr.e_shnum; i++)
+  if (show_symbols)
     {
-      if (shdr[i].sh_type == SHT_SYMTAB || shdr[i].sh_type == SHT_DYNSYM)
+      for (int i = 0; i < ehdr.e_shnum; i++)
 	{
+	  if (shdr[i].sh_type == SHT_SYMTAB || shdr[i].sh_type == SHT_DYNSYM)
+	    {
 
-	  const char *symtab_name = shstrtab + shdr[i].sh_name;
-	  printf ("Symbol Table '%s' (STT_FUNC):\n", symtab_name);
-	  print_symbols (obj, &shdr[i], shdr[shdr[i].sh_link].sh_offset);
+	      const char *symtab_name = shstrtab + shdr[i].sh_name;
+	      printf ("Symbol Table '%s' (STT_FUNC):\n", symtab_name);
+	      print_symbols (obj, &shdr[i], shdr[shdr[i].sh_link].sh_offset);
+	    }
 	}
     }
 
@@ -154,22 +168,31 @@ patchInterp (const char *file_name, const char *new_interp)
       return -1;
     }
 
-  printf ("Patching Binary:\n");
-  printf ("  OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
-
-  Elf64_Xword new_interp_len = strlen (new_interp) + 1;
-
-  fseek (obj, interp_offset, SEEK_SET);
-  fwrite (new_interp, 1, new_interp_len, obj);
-
-  phdr[interp_idx].p_filesz = new_interp_len;
-  phdr[interp_idx].p_memsz = new_interp_len;
-
-  fseek (obj, ehdr.e_phoff + interp_idx * sizeof (Elf64_Phdr), SEEK_SET);
-  size_t b_written = fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
-  if (b_written > 0)
+  if (disp_interp)
     {
-      printf ("  NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
+      printf ("0x%lx:PT_INTERP = %s\n", interp_offset, interp);
+    }
+
+  if (new_interp)
+    {
+      printf ("Patching Binary:\n");
+      printf ("  OLD 0x%lx:PT_INTERP = %s\n", interp_offset, interp);
+
+      Elf64_Xword new_interp_len = strlen (new_interp) + 1;
+
+      fseek (obj, interp_offset, SEEK_SET);
+      fwrite (new_interp, 1, new_interp_len, obj);
+
+      phdr[interp_idx].p_filesz = new_interp_len;
+      phdr[interp_idx].p_memsz = new_interp_len;
+
+      fseek (obj, ehdr.e_phoff + interp_idx * sizeof (Elf64_Phdr), SEEK_SET);
+      size_t b_written =
+	fwrite (&phdr[interp_idx], sizeof (Elf64_Phdr), 1, obj);
+      if (b_written > 0)
+	{
+	  printf ("  NEW 0x%lx:PT_INTERP = %s\n", interp_offset, new_interp);
+	}
     }
 
   free (interp);
@@ -305,7 +328,12 @@ print_usage (const char *program_name)
 {
   fprintf (stderr,
 	   "Hopper the ELF64 PT_INTERP tool by Travis Montoya <trav@hexproof.sh>\n");
-  fprintf (stderr, "usage: %s [target] [interpreter]\n", program_name);
+  fprintf (stderr, "usage: %s [option(s)] [target]\n", program_name);
+  fprintf (stderr, "  -v                 show verbose output\n");
+  fprintf (stderr,
+	   "  -s                 display symbol information (STT_FUNC)\n");
+  fprintf (stderr, "  -d                 display interpreter\n");
+  fprintf (stderr, "  -p [interpreter]   patch interpreter\n");
   fprintf (stderr,
 	   "\nYou can run '%s -search' to list common interpreters on your system\n",
 	   program_name);
@@ -314,31 +342,83 @@ print_usage (const char *program_name)
 int
 main (int argc, char *argv[])
 {
+  int opt;
+  char *interp = NULL;
+  char *target_elf = NULL;
 
+  if (argc < 2)
+    {
+      print_usage (argv[0]);
+      return 1;
+    }
+
+  /* If we are just searching do nothing further */
   if (argc == 2 && strncmp (argv[1], "-search", 7) == 0)
     {
       print_interps ();
       return 0;
     }
 
-  /*
-   * If we are not listing interpreters we must specify a target and interpreter
+  while ((opt = getopt (argc, argv, "vsdp:")) != -1)
+    {
+      switch (opt)
+	{
+	case 'v':
+	  verbose = true;
+	  break;
+	case 's':
+	  show_symbols = true;
+	  break;
+	case 'd':
+	  disp_interp = true;
+	  break;
+	case 'p':
+	  interp = optarg;
+	  break;
+	default:
+	  print_usage (argv[0]);
+	  return 1;
+	}
+    }
+
+  if (disp_interp && interp)
+    {
+      fprintf (stderr, "error: You cant patch and display the interpreter\n");
+      return 1;
+    }
+
+  if (!disp_interp && !interp)
+    {
+      fprintf (stderr,
+	       "error: you must either display interpreter or patch interpreter\n");
+      return 1;
+    }
+
+
+  if (optind < argc)
+    {
+      target_elf = argv[optind];
+    }
+  else
+    {
+      fprintf (stderr, "error: No target ELF file specified\n");
+      return 1;
+    }
+
+  if (!check_file_access (target_elf))
+    {
+      return 1;
+    }
+
+  if (interp && !check_file_access (interp))
+    {
+      return 1;
+    }
+
+  /* patchInterp handles displaying symbols, displaying interpreter and
+   * patching the file
    */
-  if (argc != 3)
-    {
-      print_usage (argv[0]);
-      return 1;
-    }
-
-  const char *target_elf = argv[1];
-  const char *new_interp = argv[2];
-
-  if (!check_file_access (target_elf) || !check_file_access (new_interp))
-    {
-      return 1;
-    }
-
-  if (patchInterp (target_elf, new_interp) != 0)
+  if (patchInterp (target_elf, interp) != 0)
     {
       fprintf (stderr, "error patching '%s'\n", target_elf);
       return 1;
